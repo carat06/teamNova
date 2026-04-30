@@ -27,17 +27,41 @@ export default function RegistrationFlow() {
   const canvasRef = useRef();
   const [kycMsg, setKycMsg] = useState('Position your face in the frame');
 
-  const sendOtp = () => {
+  const sendOtp = async () => {
     if (mobile.length < 10) {
       setError('Please enter a valid 10-digit mobile number.');
       return;
     }
     setError('');
+    setLoading(true);
     
-    // Generate a 6 digit OTP
-    const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    setGeneratedOtp(newOtp);
-    setShowDemoOtp(true);
+    try {
+      // 1. Call Backend to create/login user
+      const response = await fetch('http://localhost:8080/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile })
+      });
+
+      if (!response.ok) throw new Error('Backend connection failed');
+      
+      const data = await response.json();
+      
+      // Store token in state via UPDATE_USER_DATA temporarily or just keep it
+      dispatch({ 
+        type: 'UPDATE_USER_DATA', 
+        payload: { token: data.token } 
+      });
+
+      // 2. Generate a 6 digit OTP (Mock for demo, but we got the token!)
+      const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      setGeneratedOtp(newOtp);
+      setShowDemoOtp(true);
+    } catch (err) {
+      setError('Failed to connect to TrustID Backend. Ensure server is running on port 8080.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const verifyOtp = () => {
@@ -308,25 +332,29 @@ export default function RegistrationFlow() {
     }
 
     // 2. Simple Liveness Challenges
-    // Each challenge tracks: did the user START in neutral, then MOVE to target?
     const challenges = [
       {
         id: 'blink',
         msg: '👁️ Please BLINK your eyes',
-        eyesWereOpen: false,
+        baselineEAR: 0,
+        blinkDetected: false,
         check(landmarks) {
-          const ear = (getEAR(landmarks.getLeftEye()) + getEAR(landmarks.getRightEye())) / 2.0;
-          // Step 1: Confirm eyes are open first
-          if (!this.eyesWereOpen) {
-            if (ear > 0.18) {
-              this.eyesWereOpen = true;
-            }
-            setKycMsg(`👁️ Open your eyes — EAR: ${ear.toFixed(3)}`);
-            return false;
+          const leftEye = landmarks.getLeftEye();
+          const rightEye = landmarks.getRightEye();
+          const h = (leftEye[4].y - leftEye[1].y + rightEye[4].y - rightEye[1].y) / 2;
+          
+          if (!this.baseline || h > this.baseline) {
+            this.baseline = h;
           }
-          // Step 2: Detect the blink (any noticeable drop)
-          setKycMsg(`👁️ Now BLINK! — EAR: ${ear.toFixed(3)}`);
-          return ear < 0.16;
+          
+          if (this.baseline > 0 && h < this.baseline * 0.65) {
+            this.blinkDetected = true;
+          }
+          
+          if (this.blinkDetected && h > this.baseline * 0.85) {
+            return true;
+          }
+          return false;
         }
       },
       {
@@ -336,14 +364,10 @@ export default function RegistrationFlow() {
         check(landmarks) {
           const ratio = getHeadYawRatio(landmarks);
           if (!this.wasCenter) {
-            if (ratio > 0.85 && ratio < 1.15) {
-              this.wasCenter = true;
-            }
-            setKycMsg(`⬅️ Face forward first — Yaw: ${ratio.toFixed(2)}`);
+            if (ratio > 0.9 && ratio < 1.1) this.wasCenter = true;
             return false;
           }
-          setKycMsg(`⬅️ Now turn LEFT — Yaw: ${ratio.toFixed(2)}`);
-          return ratio < 0.82;
+          return ratio < 0.78;
         }
       },
       {
@@ -353,21 +377,25 @@ export default function RegistrationFlow() {
         check(landmarks) {
           const ratio = getHeadYawRatio(landmarks);
           if (!this.wasCenter) {
-            if (ratio > 0.85 && ratio < 1.15) {
-              this.wasCenter = true;
-            }
-            setKycMsg(`➡️ Face forward first — Yaw: ${ratio.toFixed(2)}`);
+            if (ratio > 0.9 && ratio < 1.1) this.wasCenter = true;
             return false;
           }
-          setKycMsg(`➡️ Now turn RIGHT — Yaw: ${ratio.toFixed(2)}`);
-          return ratio > 1.22;
+          return ratio > 1.25;
+        }
+      },
+      {
+        id: 'forward',
+        msg: '🎯 Look directly at the CAMERA',
+        check(landmarks) {
+          const ratio = getHeadYawRatio(landmarks);
+          return (ratio > 0.92 && ratio < 1.08);
         }
       }
     ];
 
-    // Pick 2 random challenges
+    // Pick 3 random challenges
     const shuffled = [...challenges].sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, 2);
+    const selected = shuffled.slice(0, 3);
     
     let idx = 0;
     setKycMsg(`✅ Deepfake passed! ${selected[idx].msg}`);
@@ -378,9 +406,11 @@ export default function RegistrationFlow() {
       
       let timeout;
       let interval;
+      let isTimedOut = false;
 
       timeout = setTimeout(() => {
-        clearInterval(interval);
+        isTimedOut = true;
+        if (interval) clearInterval(interval);
         setAttempts(prev => {
           const n = prev + 1;
           if (n >= 3) {
@@ -396,21 +426,20 @@ export default function RegistrationFlow() {
         if (videoRef.current && videoRef.current.srcObject) {
           videoRef.current.srcObject.getTracks().forEach(t => t.stop());
         }
-      }, 20000);
+      }, 25000);
 
       interval = setInterval(async () => {
-        if (!videoRef.current) {
+        if (!videoRef.current || isTimedOut) {
           clearInterval(interval);
-          clearTimeout(timeout);
           return;
         }
         
         const detections = await faceapi.detectAllFaces(
           videoRef.current, 
-          new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.3 })
+          new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.15, inputSize: 224 })
         ).withFaceLandmarks();
 
-        if (canvasRef.current && detections.length > 0) {
+        if (canvasRef.current && detections.length > 0 && !isTimedOut) {
           const resized = faceapi.resizeResults(detections, displaySize);
           const ctx = canvasRef.current.getContext('2d');
           ctx.clearRect(0, 0, 400, 300);
@@ -425,22 +454,34 @@ export default function RegistrationFlow() {
               if (idx < selected.length) {
                 setKycMsg(`✅ Great! Next: ${selected[idx].msg}`);
               } else {
-                setKycMsg('🎉 Liveliness verified! Signing credential...');
+                setKycMsg('🎉 Liveliness verified! Capturing photo...');
                 clearInterval(interval);
                 clearTimeout(timeout);
-                setTimeout(() => {
-                  if (videoRef.current && videoRef.current.srcObject) {
-                    videoRef.current.srcObject.getTracks().forEach(t => t.stop());
-                  }
-                  finishRegistration(baseDescriptor, photoUrl);
-                }, 1500);
+                
+                if (videoRef.current && !isTimedOut) {
+                  const captureCanvas = document.createElement('canvas');
+                  captureCanvas.width = videoRef.current.videoWidth;
+                  captureCanvas.height = videoRef.current.videoHeight;
+                  const cctx = captureCanvas.getContext('2d');
+                  cctx.drawImage(videoRef.current, 0, 0);
+                  const base64Photo = captureCanvas.toDataURL('image/jpeg', 0.8);
+                  setCapturedPhoto(base64Photo);
+                  setKycMsg('📸 Photo Captured! Finalizing Identity...');
+                  
+                  setTimeout(() => {
+                    if (videoRef.current && videoRef.current.srcObject) {
+                      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+                    }
+                    if (!isTimedOut) finishRegistration(baseDescriptor, base64Photo);
+                  }, 1500);
+                }
               }
             }
           }
         } else if (canvasRef.current) {
           canvasRef.current.getContext('2d').clearRect(0, 0, 400, 300);
         }
-      }, 80);
+      }, 50);
     }
   };
 
@@ -473,22 +514,48 @@ export default function RegistrationFlow() {
       const { issueSelectiveCredential } = await import('../crypto/selectiveDisclosure.js');
       const bbsCredential = await issueSelectiveCredential(credential.credentialSubject);
 
-      // 5. Store everything in global state
+      console.log("Syncing with Backend. Token present:", !!state.token);
+      if (!state.token) console.error("CRITICAL: JWT Token is MISSING in state!");
+
+      // 5. Sync with Backend
+      const kycResponse = await fetch('http://localhost:8080/api/kyc/verify', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        },
+        body: JSON.stringify({
+          name: "A Praneya", // Hardcoded Name
+          dob: "06/04/2006", // Hardcoded DOB
+          faceDescriptor: JSON.stringify(Array.from(faceDescriptor || [])),
+          photoBase64: photoUrl,
+          credential: JSON.stringify(credential),
+          signature: signature,
+          bbsCredential: JSON.stringify(bbsCredential)
+        })
+      });
+
+      if (!kycResponse.ok) console.warn('Backend KYC sync failed, continuing locally.');
+
+      // 6. Store everything in global state
       dispatch({
         type: 'SET_USER',
         payload: {
-          name: userData.name,
-          dob: userData.dob,
-          mobile: userData.mobile,
-          pan: userData.pan,
-          kycGrade: 'A',
-          issueDate: new Date().toISOString().split('T')[0],
-          registered: true,
-          faceDescriptor: faceDescriptor,
-          photoUrl: photoUrl,
-          credential: credential,
-          credentialSignature: signature,
-          bbsCredential: bbsCredential,
+          token: state.token,
+          user: {
+            name: "A Praneya",
+            dob: "06/04/2006",
+            mobile: mobile,
+            pan: panData.panNumber,
+            kycGrade: 'A',
+            issueDate: new Date().toISOString().split('T')[0],
+            registered: true,
+            faceDescriptor: faceDescriptor,
+            photoBase64: photoUrl,
+            credential: credential,
+            credentialSignature: signature,
+            bbsCredential: bbsCredential,
+          }
         }
       });
 

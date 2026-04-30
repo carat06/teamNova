@@ -161,7 +161,7 @@ export default function WalletDashboard() {
             
             <div className="id-card-body">
               <img 
-                src={user.photoUrl || "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=200&h=250&fit=crop"} 
+                src={user.photoBase64 || "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=200&h=250&fit=crop"} 
                 className="id-card-photo" 
                 alt="ID Photo"
               />
@@ -307,7 +307,7 @@ export default function WalletDashboard() {
             
             <div className="id-card-body">
               <img 
-                src={user.photoUrl || "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=200&h=250&fit=crop"} 
+                src={user.photoBase64 || "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=200&h=250&fit=crop"} 
                 className="id-card-photo" 
                 alt="ID Photo"
               />

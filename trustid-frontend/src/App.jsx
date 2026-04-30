@@ -10,7 +10,7 @@ import { AppContext } from './context/AppContext';
 function ProtectedRoute({ children }) {
   const { state } = useContext(AppContext);
   if (!state.isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
   return children;
 }
