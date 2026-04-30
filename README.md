@@ -70,3 +70,9 @@ teamNova/
 ├── .env                            
 ├── README.md
 └── package.json
+
+
+<h2>  Architecture Diagram : </h2>
+
+<img width="1173" height="620" alt="WhatsApp Image 2026-04-30 at 7 23 10 AM" src="https://github.com/user-attachments/assets/241d7baf-9b00-4e90-9e69-3da5b28ac7d4" />
+
