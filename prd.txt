@@ -1,0 +1,460 @@
+TrustID
+User-Controlled Financial Identity Verification
+Product Requirements Document
+Version
+1.0 — Initial Release
+Date
+April 2026
+Status
+Draft — For Review
+Owner
+TrustID Product Team
+Classification
+Confidential — Internal Use Only
+Table of Contents
+1. Executive Summary
+TrustID is a mobile-first, user-controlled financial identity verification platform that solves three critical problems in Indian regulated financial services: deepfake-powered impersonation, synthetic identity fraud, and redundant re-KYC across institutions.
+The platform enables individuals to register once using their mobile number, complete a full identity verification (documents, video KYC, biometric), and receive a cryptographically signed Verifiable Credential stored in their personal wallet. When any regulated entity — bank, NBFC, broker, or insurer — needs to verify the user, TrustID generates a Zero-Knowledge Proof that confirms required claims (age, PAN status, KYC grade, income band) without exposing any raw Personally Identifiable Information.
+TrustID is aligned with the RBI Account Aggregator framework, UIDAI's DigiLocker API, and India's financial inclusion mandate — including offline and voice-first access for low-bandwidth users.
+0 documents
+shared during re-KYC
+< 5 seconds
+cross-institution verify
+1 registration
+for all institutions
+100% consent
+user-controlled sharing
+2. Problem Statement
+2.1 Current State of Financial Identity Verification
+India's financial services sector processes over 200 million KYC verifications annually. The current system has three structural failures:
+Redundancy: Every bank, broker, and insurer runs its own independent KYC. A user opening accounts at three institutions submits Aadhaar, PAN, and biometrics three separate times.
+PII Exposure: Every verification event creates a new copy of sensitive documents at a new institution, multiplying breach surface.
+Fraud Vulnerability: The rise of AI-generated deepfakes and synthetic identities has made document-based and video KYC trivially attackable. Existing systems lack real-time deepfake detection.
+2.2 Specific Threat Vectors
+Threat
+Description
+Current Gap
+Deepfake Impersonation
+AI-generated faces pass liveness checks in video KYC workflows at over 60% success rate on legacy systems
+No frame-level deepfake classifier deployed at KYC vendors
+Synthetic Identity Fraud
+Fabricated identities using combinations of real and fake attributes pass document checks because no cross-institution graph exists
+No shared anomaly graph across institutions
+Credential Theft
+Raw PII stored at dozens of institutions creates massive breach targets. Each breach exposes full identity packages.
+Document copies stored at every institution permanently
+Exclusion
+KYC systems require smartphones, high bandwidth, and literacy. 400M+ Indians on feature phones or 2G cannot complete digital KYC.
+No offline or voice-first KYC pathway
+3. Solution Overview
+TrustID is structured as a five-layer system, each layer independently functional and deployable, collectively forming an end-to-end identity platform.
+3.1 System Architecture Summary
+#
+Layer
+What it does
+Key technology
+1
+Deepfake Guard
+Detects AI-generated faces, injection attacks, and biometric spoofing during video KYC. Runs passive liveness + active challenge + frame-level classifier.
+EfficientNet, face-api.js, MediaPipe, WebRTC
+2
+Credential Engine
+Issues a cryptographically signed Verifiable Credential after full verification. Imports data from DigiLocker; never stores raw PII.
+DigiLocker API, crypto.subtle, JSON-LD VC spec
+3
+ZK Proof Layer
+Generates Zero-Knowledge Proofs for selective claim sharing. Proves age, income, KYC grade without revealing name, DOB, or Aadhaar.
+snarkjs, BBS+ signatures, DIF Presentation Exchange
+4
+Fraud Graph
+Real-time graph of identity attributes across onboarding events. Flags synthetic identity clusters, velocity attacks, and biometric reuse.
+Neo4j / NetworkX, graph ML, Kafka streams
+5
+Inclusive Access
+Offline-capable USSD fallback, vernacular voice guidance in 12 languages, on-device face match for 2G environments.
+TFLite, Bhashini API, USSD gateway
+4. User Flows
+4.1 Registration Flow
+Registration is a one-time process that establishes a verified identity for the user.
+User enters mobile number (+91 format, 10 digits). System validates format and checks for existing registration.
+System sends a 6-digit OTP via SMS. User enters OTP within 30-second window. Three wrong attempts lock the session for 10 minutes.
+On OTP verification, user proceeds to document verification. Mobile number is stored as SHA-256 hash — never in plaintext.
+User uploads or camera-captures Aadhaar and PAN. OCR extracts structured fields. Name cross-match validates consistency across documents.
+User completes 3-challenge Video KYC: (i) face straight + name spoken, (ii) head turn right, (iii) document held to camera.
+System runs deepfake detection on every video frame. All three challenges must pass.
+On full verification, system issues a Verifiable Credential signed with TrustID's issuer key and stores it in the user's device wallet.
+4.2 Login Flow
+After registration, users authenticate using facial recognition — no password or PIN required.
+System accesses front camera via WebRTC getUserMedia.
+Face-api.js detects face presence and alignment in real time.
+Passive liveness: blink detection (eye aspect ratio < 0.2 for 2 frames).
+On confidence > 0.85 across 3 consecutive frames, face hash is computed and compared against stored credential hash.
+Successful match sets session state. Failed match after 3 attempts locks account for 15 minutes.
+4.3 Identity Sharing Flow (ZK Proof)
+This flow is triggered when an external institution requests identity verification from the user.
+External party (bank, NBFC, broker) sends a verification request specifying required claims, e.g.: age_above_18, pan_verified, kyc_grade_A, income_above_3L.
+TrustID app presents the request to the user showing each claim in plain English. User reviews and may deselect any claim.
+User taps 'Share with proof'. App displays expandable explanation of what ZK proof means and confirms zero PII will be sent.
+App generates a ZK proof for each selected claim using the stored Verifiable Credential. Each proof is a cryptographic string derived from the credential via snarkjs circuits.
+Only the proof bundle is transmitted: boolean result per claim + proof hash + issuer signature. No name, DOB, Aadhaar number, income figure, or document image is included.
+Receiving institution verifies: (i) proof math validity, (ii) credential issuer signature, (iii) revocation status. Verification completes in under 5 seconds.
+A consent receipt is written to the user's immutable audit log: timestamp, institution ID, claims shared. User can view full history at any time.
+5. Feature Requirements
+Priority levels: P0 = must-have for launch, P1 = high importance, P2 = nice-to-have. Release: MVP = v1.0 launch, V2 = next release.
+5.1 Registration & Authentication
+ID
+Feature
+Description
+Priority
+Release
+R01
+Mobile OTP registration
+10-digit Indian mobile number validation + 6-digit OTP via SMS, 30-second expiry, 3-attempt lockout
+P0
+MVP
+R02
+Face recognition login
+WebRTC front camera + face-api.js detection, confidence threshold 0.85, blink liveness check
+P0
+MVP
+R03
+Session management
+JWT session token, 8-hour expiry, refresh on activity, secure storage in device keychain
+P0
+MVP
+R04
+Account lockout
+15-minute lockout after 3 failed face logins, 10-minute lockout after 3 wrong OTPs
+P0
+MVP
+R05
+USSD fallback login
+Feature phone login via *number# USSD menu with OTP re-verification
+P1
+V2
+R06
+Biometric update
+Periodic face re-enrollment (every 12 months) to account for appearance changes
+P1
+V2
+5.2 Document Verification
+ID
+Feature
+Description
+Priority
+Release
+D01
+Aadhaar OCR extraction
+Camera capture or file upload, extract name/DOB/gender/Aadhaar-last4 via mock OCR API
+P0
+MVP
+D02
+PAN OCR extraction
+Extract name/PAN number/DOB, cross-match name with Aadhaar using Levenshtein > 80%
+P0
+MVP
+D03
+DigiLocker pull
+OAuth-based pull of Aadhaar and PAN directly from DigiLocker, eliminating manual upload
+P0
+MVP
+D04
+Document masking
+Display only masked versions (XXXX-XXXX-1234) in UI. Never render full Aadhaar on screen.
+P0
+MVP
+D05
+Multi-step progress
+3-step wizard with back navigation, data persistence across steps via useReducer
+P1
+MVP
+D06
+Document freshness check
+Flag DigiLocker documents older than 5 years for re-verification
+P1
+V2
+5.3 Video KYC & Deepfake Detection
+ID
+Feature
+Description
+Priority
+Release
+V01
+3-challenge video KYC
+Sequential challenges: (1) face forward + name, (2) head turn right, (3) document to camera. 10s per challenge.
+P0
+MVP
+V02
+Passive liveness
+Skin texture analysis, blink rate, eye aspect ratio via face-api.js landmark detection
+P0
+MVP
+V03
+Deepfake frame classifier
+EfficientNet ONNX model scanning every frame for GAN frequency artifacts, confidence-scored
+P0
+MVP
+V04
+Injection attack detection
+Camera sensor metadata fingerprinting, virtual camera detection, stream integrity check
+P0
+MVP
+V05
+Risk score output
+Per-session risk score (0.0–1.0) with explainability: which signals triggered the score
+P1
+MVP
+V06
+Human review fallback
+If 2 challenges fail, offer scheduled video call with human KYC agent
+P1
+V2
+V07
+Challenge randomization
+Randomize challenge order and content per session to defeat replay attacks
+P0
+MVP
+5.4 Verifiable Credential Wallet
+ID
+Feature
+Description
+Priority
+Release
+W01
+VC issuance
+Issue JSON-LD Verifiable Credential with issuer signature after full verification. Store encrypted on device.
+P0
+MVP
+W02
+Credential card UI
+Visual ID card showing KYC grade, issue date, masked name, QR code encoding credential ID
+P0
+MVP
+W03
+QR code
+QR encodes credential ID (not PII). Scannable by institution verifier apps.
+P0
+MVP
+W04
+Credential download
+Export credential JSON for backup. Password-protected ZIP download.
+P1
+MVP
+W05
+Credential revocation
+User-initiated revocation clears credential from device and writes to public revocation registry
+P0
+MVP
+W06
+Credential renewal
+Trigger re-verification flow when credential expires (default: 2 years)
+P1
+V2
+5.5 ZK Proof Sharing & Consent
+ID
+Feature
+Description
+Priority
+Release
+Z01
+Claim selection UI
+Show each requested claim with plain-English label. User can toggle any claim off before sharing.
+P0
+MVP
+Z02
+ZK proof generation
+Generate snarkjs proof per claim. Each proof: boolean result + cryptographic hash + issuer signature.
+P0
+MVP
+Z03
+Zero PII guarantee
+Technical and UI guarantee: no name, DOB, Aadhaar, income figure in proof bundle. Verified by code audit.
+P0
+MVP
+Z04
+Consent receipt
+Immutable log entry per sharing event: timestamp, institution ID, claims shared, proof hashes.
+P0
+MVP
+Z05
+Sharing history
+Full audit log screen showing all past sharing events, filterable by institution and date.
+P1
+MVP
+Z06
+Selective revocation
+Revoke a specific sharing event's proof from the revocation registry without revoking full credential.
+P2
+V2
+6. Non-Functional Requirements
+6.1 Performance
+Metric
+Target
+Notes
+ZK proof generation time
+< 3 seconds on mid-range Android
+Pixel 6a baseline device
+Face recognition login
+< 2 seconds from camera open to session start
+Includes liveness check
+Institution verification (proof check)
+< 5 seconds end-to-end
+Including revocation registry lookup
+Video KYC session
+< 3 minutes total for all 3 challenges
+With stable camera
+OTP delivery
+< 10 seconds
+SMS gateway SLA
+App cold start
+< 1.5 seconds to interactive state
+React Native optimized bundle
+6.2 Security
+All PII fields hashed with SHA-256 (crypto.subtle) before storage. Raw values never written to localStorage or any remote store.
+Verifiable Credential encrypted with AES-256-GCM using a key derived from the user's face hash + device fingerprint.
+TrustID issuer private key stored in HSM (Hardware Security Module) for production; mock RSA hex string for prototype.
+All API calls over TLS 1.3. Certificate pinning on mobile app.
+OTP sessions time-limited to 30 seconds. OTP tokens are single-use and invalidated on first use.
+Consent log entries are append-only. No delete operation exposed in UI or API.
+6.3 Privacy
+Zero raw PII transmitted in the ZK proof sharing flow. Technically enforced, not policy-only.
+Mobile number stored only as SHA-256 hash after registration confirmation.
+Face biometric stored only as a derived hash, never as a recoverable image.
+DigiLocker documents fetched transiently for OCR extraction only; not persisted server-side.
+User can permanently delete all data ('Right to erasure') from Settings — triggers credential revocation and local data purge.
+6.4 Accessibility & Inclusion
+Voice-guided flow in 12 Indian languages via Bhashini API integration (Hindi, Tamil, Telugu, Kannada, Malayalam, Bengali, Marathi, Gujarati, Punjabi, Odia, Assamese, Urdu).
+USSD fallback for feature phones: complete KYC registration via *XXXX# menu without internet.
+On-device face match using TensorFlow Lite — works at 50 KB/s without uploading photos.
+WCAG 2.1 AA compliance: minimum 4.5:1 contrast, 44px touch targets, screen reader labels on all interactive elements.
+Large-text mode: all body text scales to minimum 18sp on accessibility font size setting.
+7. Technology Stack
+Layer
+Technology
+Purpose
+Frontend
+React Native + React (web)
+Mobile app (iOS/Android) + web fallback interface
+Face Detection
+face-api.js (jsdelivr CDN)
+Real-time face detection, landmarks, liveness signals
+Deepfake Detection
+EfficientNet ONNX + ONNX Runtime
+Frame-level GAN artifact classification
+ZK Proofs
+snarkjs (browser/Node)
+Zero-knowledge proof generation and verification circuits
+Credential Signing
+crypto.subtle (Web Crypto API)
+SHA-256 hashing, AES-GCM encryption, RSA mock signing
+DigiLocker
+DigiLocker Sandbox API v2
+OAuth pull of Aadhaar and PAN documents
+Fraud Graph
+Neo4j (graph DB) + NetworkX
+Identity graph storage and cluster detection algorithms
+Voice / Language
+Bhashini API
+Speech recognition and synthesis in 12 Indian languages
+Offline / Feature Phone
+TFLite + USSD gateway
+On-device inference + SMS-based KYC flow
+Backend APIs
+FastAPI (Python)
+Verification orchestration, fraud scoring, credential issuance
+State Management
+React useReducer + localStorage
+Client-side state with persistence across sessions
+Routing
+React Router v6
+Client-side navigation with route guards
+8. Milestones & Roadmap
+Phase
+Timeline
+Deliverables
+Status
+Phase 1
+Weeks 1–2
+Mobile + OTP registration, face login, basic document upload UI, localStorage state
+MVP
+Phase 2
+Weeks 3–4
+Video KYC with 3 challenges, face-api.js liveness, deepfake frame classifier integration
+MVP
+Phase 3
+Weeks 5–6
+DigiLocker API integration, Verifiable Credential issuance, wallet UI, QR code
+MVP
+Phase 4
+Week 7
+ZK proof generation with snarkjs, consent flow, sharing UI, consent log
+MVP
+Phase 5
+Week 8
+Fraud graph backend, synthetic identity detection, risk score API
+V2
+Phase 6
+Weeks 9–10
+Bhashini voice guidance, TFLite on-device face match, USSD fallback
+V2
+Phase 7
+Weeks 11–12
+Production hardening: HSM integration, certificate pinning, penetration test
+V2
+9. Risks & Mitigations
+Risk
+Likelihood
+Impact
+Mitigation
+DigiLocker API rate limits block high-volume registration
+Medium
+High
+Cache document pulls in encrypted session store; fallback to manual upload with OCR
+face-api.js model accuracy insufficient on diverse skin tones
+Medium
+High
+Supplement with device-native biometric API (FaceID/Android BiometricPrompt); bias test on diverse dataset before launch
+snarkjs proof generation too slow on low-end devices
+Low
+Medium
+Pre-compile proving keys; offer server-side proof generation as opt-in fallback with explicit consent
+Bhashini API downtime blocks voice-guided flow
+Low
+Medium
+Cache language model locally for top 3 languages; degrade gracefully to English with on-screen text
+Regulatory approval required before sharing PAN-linked proofs
+Medium
+High
+Engage with RBI Regulatory Sandbox programme early; limit MVP to demo/sandbox credentials only
+Browser WebRTC unavailable on older Android WebView
+Low
+Low
+Detect WebRTC support on app load; route to native camera module if unavailable
+10. Glossary
+Term
+Definition
+Verifiable Credential (VC)
+A cryptographically signed digital document containing verified identity claims, issued by a trusted party and held by the subject.
+Zero-Knowledge Proof (ZKP)
+A mathematical proof that a statement is true without revealing any information beyond the truth of the statement itself.
+Deepfake
+AI-generated synthetic media — typically a face — that mimics a real person's appearance to defeat identity verification systems.
+Liveness Detection
+Technical measures to distinguish a live person from a photo, video, or mask during biometric capture.
+DigiLocker
+India's official digital document wallet service operated by MeitY, containing Aadhaar, PAN, driving licence, and other government-issued documents.
+Account Aggregator (AA)
+RBI-licensed data-sharing framework enabling consented financial data flows between financial information providers and users.
+KYC Grade
+A risk-based classification (A/B/C) assigned after full identity verification, indicating the level of confidence in the user's identity.
+Synthetic Identity
+A fraudulent identity created by combining real attributes (e.g., a valid PAN) with fabricated ones (fictitious name, address) to pass document-based checks.
+snarkjs
+A JavaScript library implementing the zk-SNARK zero-knowledge proof system, usable in browsers via WebAssembly.
+BBS+ Signatures
+A cryptographic signature scheme enabling selective disclosure — proving a subset of signed attributes without revealing the full set.
+USSD
+Unstructured Supplementary Service Data — a text-menu protocol on mobile networks, usable without internet on feature phones.
+HSM
+Hardware Security Module — a physical device that safeguards cryptographic keys and performs signing operations in a tamper-proof environment.
+TrustID PRD v1.0  |  Confidential  |  April 2026
